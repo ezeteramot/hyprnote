@@ -1,9 +1,12 @@
 [package]
-name = "desktop"
-version = "0.0.79"
-authors = ["you"]
+name = "teramot-note-taker"
+version = "1.0.0-alpha.1"
+authors = ["Teramot Team <soporte@teramot.com.ar>"]
 edition = "2021"
-description = "Hyprnote Desktop App"
+description = "Teramot Note Taker - AI-powered note-taking for private meetings"
+license = "GPL-3.0"
+repository = "https://github.com/ezeteramot/hyprnote"
+homepage = "https://teramot.com.ar"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,7 +14,7 @@ description = "Hyprnote Desktop App"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "hyprnote_desktop_lib"
+name = "teramot_note_taker_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
