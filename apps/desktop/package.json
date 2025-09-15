@@ -1,8 +1,21 @@
 {
-  "name": "@hypr/desktop",
+  "name": "@teramot/note-taker",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0-alpha.1",
   "type": "module",
+  "description": "Teramot Note Taker - AI-powered note-taking for private meetings",
+  "homepage": "https://github.com/ezeteramot/hyprnote",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ezeteramot/hyprnote.git",
+    "directory": "apps/desktop"
+  },
+  "license": "GPL-3.0",
+  "author": {
+    "name": "Teramot Team",
+    "email": "soporte@teramot.com.ar"
+  },
+  "keywords": ["ai", "notes", "transcription", "meetings", "argentina", "local-first"],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

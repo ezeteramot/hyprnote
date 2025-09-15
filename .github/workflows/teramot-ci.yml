@@ -1,0 +1,289 @@
+name: Teramot Note Taker CI/CD
+
+on:
+  push:
+    branches: [ teramot-note-taker, main ]
+  pull_request:
+    branches: [ teramot-note-taker ]
+  release:
+    types: [ published ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Verificación básica de código
+  check:
+    name: 🔍 Verificación de Código
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+    
+    - name: Configurar Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        components: rustfmt, clippy
+        override: true
+    
+    - name: Cache de dependencias
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Verificar formato
+      run: cargo fmt --all -- --check
+    
+    - name: Linting con Clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # Tests unitarios
+  test:
+    name: 🧪 Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+    
+    - name: Configurar Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    
+    - name: Instalar dependencias del sistema (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt update
+        sudo apt install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+    
+    - name: Instalar dependencias del sistema (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install libomp cmake
+    
+    - name: Cache de dependencias
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Ejecutar tests
+      run: cargo test --verbose
+
+  # Build de la aplicación
+  build:
+    name: 🔨 Build
+    needs: [check, test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+        - os: ubuntu-latest
+          target: x86_64-unknown-linux-gnu
+          artifact_name: teramot-note-taker
+          asset_name: teramot-note-taker-linux-x86_64
+        - os: windows-latest
+          target: x86_64-pc-windows-msvc
+          artifact_name: teramot-note-taker.exe
+          asset_name: teramot-note-taker-windows-x86_64.exe
+        - os: macos-latest
+          target: x86_64-apple-darwin
+          artifact_name: teramot-note-taker
+          asset_name: teramot-note-taker-macos-x86_64
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+    
+    - name: Configurar Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Configurar Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        override: true
+    
+    - name: Instalar dependencias del sistema (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt update
+        sudo apt install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+    
+    - name: Instalar dependencias del sistema (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install libomp cmake
+    
+    - name: Instalar pnpm
+      run: npm install -g pnpm
+    
+    - name: Cache de dependencias Node.js
+      uses: actions/cache@v3
+      with:
+        path: ~/.pnpm-store
+        key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+    
+    - name: Cache de dependencias Rust
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Instalar dependencias
+      run: pnpm install --frozen-lockfile
+    
+    - name: Build de la aplicación
+      run: pnpm tauri build --target ${{ matrix.target }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ENABLE_CODE_SIGNING: ${{ secrets.APPLE_CERTIFICATE }}
+        APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+    
+    - name: Subir artefactos de build
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.asset_name }}
+        path: src-tauri/target/${{ matrix.target }}/release/bundle/
+
+  # Empaquetado para distribución Linux
+  package-linux:
+    name: 📦 Empaquetar Linux
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+    
+    - name: Descargar artefactos
+      uses: actions/download-artifact@v3
+      with:
+        name: teramot-note-taker-linux-x86_64
+        path: ./dist/
+    
+    - name: Instalar herramientas de empaquetado
+      run: |
+        sudo apt update
+        sudo apt install -y ruby ruby-dev build-essential
+        sudo gem install fpm
+    
+    - name: Crear paquete DEB
+      run: |
+        fpm -s dir -t deb \
+          --name teramot-note-taker \
+          --version ${{ github.event.release.tag_name }} \
+          --architecture amd64 \
+          --maintainer "Teramot Team <soporte@teramot.com.ar>" \
+          --description "AI-powered note-taking for private meetings" \
+          --url "https://teramot.com.ar" \
+          --license "GPL-3.0" \
+          --package ./packages/ \
+          ./dist/=/opt/teramot-note-taker/
+    
+    - name: Crear paquete RPM
+      run: |
+        fpm -s dir -t rpm \
+          --name teramot-note-taker \
+          --version ${{ github.event.release.tag_name }} \
+          --architecture x86_64 \
+          --maintainer "Teramot Team <soporte@teramot.com.ar>" \
+          --description "AI-powered note-taking for private meetings" \
+          --url "https://teramot.com.ar" \
+          --license "GPL-3.0" \
+          --package ./packages/ \
+          ./dist/=/opt/teramot-note-taker/
+    
+    - name: Subir paquetes a release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          packages/*.deb
+          packages/*.rpm
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Deploy de documentación
+  docs:
+    name: 📚 Deploy Documentación
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/teramot-note-taker'
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+    
+    - name: Configurar GitHub Pages
+      uses: actions/configure-pages@v3
+    
+    - name: Crear sitio de documentación
+      run: |
+        mkdir -p docs-site
+        cp README-TERAMOT.md docs-site/index.md
+        cp ROADMAP-TERAMOT.md docs-site/roadmap.md
+        cp CONTRIBUTING.md docs-site/contributing.md
+        cp IMPLEMENTATION.md docs-site/implementation.md
+        
+        # Crear un index.html básico
+        cat > docs-site/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Teramot Note Taker - Documentación</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 40px; }
+                h1 { color: #0066cc; }
+                .nav { margin: 20px 0; }
+                .nav a { margin-right: 20px; text-decoration: none; color: #0066cc; }
+            </style>
+        </head>
+        <body>
+            <h1>🇦🇷 Teramot Note Taker</h1>
+            <p>Tomador de notas con IA para reuniones privadas</p>
+            <div class="nav">
+                <a href="index.md">Inicio</a>
+                <a href="roadmap.md">Roadmap</a>
+                <a href="contributing.md">Contribuir</a>
+                <a href="implementation.md">Implementación</a>
+            </div>
+            <p>Selecciona una página de la navegación para ver la documentación.</p>
+        </body>
+        </html>
+        EOF
+    
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v2
+      with:
+        path: docs-site
+    
+    - name: Deploy a GitHub Pages
+      uses: actions/deploy-pages@v2
